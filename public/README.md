@@ -2,7 +2,7 @@
 
 ## 在线体验
 
-[👉 点击这里直接在浏览器中启动俄罗斯方块手势+语音控制版](./tetris-gesture-voice-realtime.html)
+<a href="./tetris-gesture-voice-realtime.html" target="_blank">👉 点击这里直接在新标签页中启动俄罗斯方块手势+语音控制版</a>
 
 ## 简介
 
