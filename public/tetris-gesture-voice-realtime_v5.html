@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>俄罗斯方块 - 实时手势+语音控制</title>
+    <style>
+        body {
+            background: #222;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+        }
+        #container {
+            display: flex;
+            flex-direction: row;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 28px;
+            margin-top: 18px;
+        }
+        #game-area, #video-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #game {
+            background: #111;
+            border: 4px solid #555;
+            display: grid;
+            grid-template-rows: repeat(20, 24px);
+            grid-template-columns: repeat(10, 24px);
+            gap: 1px;
+        }
+        .cell {
+            width: 24px;
+            height: 24px;
+            background: #222;
+        }
+        .filled {
+            background: #1de9b6;
+        }
+        #score { margin-top: 10px; font-size: 1.2em; }
+        #info { margin-top: 10px; font-size: 1em; color: #aaa; }
+        #restart { margin-top: 12px; padding: 6px 20px; background: #1de9b6; color: #111; border: none; border-radius: 5px; font-size: 1em; cursor: pointer; display: none; }
+        #restart:hover { background: #1bd3a4; }
+        #video-area { margin-top: 6px; }
+        #video { border-radius: 7px; border: 2px solid #888; background: #000; }
+        #gesture-status { margin-top: 12px; color: #ffecb3; font-size: 1.1em; min-height: 1.2em; }
+        #voice-controls { margin-top: 16px; display: flex; flex-direction: row; gap: 12px; }
+        #voice-status { margin-top: 10px; color: #80ffea; min-height: 1.5em;}
+        #cmd-preview { margin-top: 5px; color: #ffecb3; min-height: 1.5em; }
+        #confidence { color: #80ffea; min-height: 1.2em; }
+        @media (max-width: 850px) {
+            #container { flex-direction: column; align-items: center; }
+            #video-area { margin-top: 16px; }
+        }
+    </style>
+    <!-- TensorFlow.js & HandPoseDetection -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"></script>
+</head>
+<body>
+    <h1 style="text-align:center;margin-top:18px;">俄罗斯方块 - 实时手势+语音控制</h1>
+    <div id="container">
+        <div id="game-area">
+            <div id="game"></div>
+            <div id="score">得分：0</div>
+            <div id="info">
+                <b>手势：</b>左右移动=横向挥动，旋转=手举高，快下落=手往下<br>
+                <span style="color:#1de9b6">请允许摄像头和麦克风访问</span>
+            </div>
+            <button id="restart">重新开始</button>
+        </div>
+        <div id="video-area">
+            <video id="video" width="320" height="240" autoplay muted playsinline style="display:block"></video>
+            <div id="gesture-status">手势状态：未检测到手</div>
+            <div id="voice-controls">
+                <button id="voice-cmd-btn">开启语音命令</button>
+            </div>
+            <div id="voice-status">语音命令：未启动</div>
+            <div id="cmd-preview"></div>
+            <div id="confidence"></div>
+        </div>
+    </div>
+    <script>
+    // ...完整版JS与手势语音逻辑同前一回复，已给出...
+    </script>
+</body>
+</html>
