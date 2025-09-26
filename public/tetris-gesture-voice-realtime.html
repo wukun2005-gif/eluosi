@@ -87,7 +87,319 @@
         </div>
     </div>
     <script>
-    // ...完整版JS与手势语音逻辑同前一回复，已给出...
+    // === 俄罗斯方块核心逻辑 ===
+    const ROWS = 20, COLS = 10;
+    const NORMAL_INTERVAL = 500, FAST_INTERVAL = 60, SLOW_INTERVAL = 1000;
+    const SHAPES = [
+        [[1,1,1,1]], [[1,1],[1,1]],
+        [[0,1,0],[1,1,1]], [[0,1,1],[1,1,0]],
+        [[1,1,0],[0,1,1]], [[1,0,0],[1,1,1]],
+        [[0,0,1],[1,1,1]]
+    ];
+    const game = document.getElementById('game');
+    let cells = [];
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const div = document.createElement('div');
+        div.className = 'cell';
+        game.appendChild(div);
+    }
+    cells = Array.from(document.querySelectorAll('.cell'));
+    let board, current, currentRow, currentCol, score, timer, gameOver = false;
+    let interval = NORMAL_INTERVAL;
+    let keyDownStates = {down: false, up: false};
+    let paused = false;
+
+    function randomShape() {
+        const idx = Math.floor(Math.random() * SHAPES.length);
+        return JSON.parse(JSON.stringify(SHAPES[idx]));
+    }
+    function resetBoard() {
+        board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+    }
+    function draw() {
+        for (let i = 0; i < ROWS * COLS; i++) cells[i].className = 'cell';
+        for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++)
+            if (board[r][c]) cells[r*COLS + c].classList.add('filled');
+        if (!gameOver) for (let r = 0; r < current.length; r++)
+            for (let c = 0; c < current[0].length; c++)
+                if (current[r][c]) {
+                    let rr = currentRow + r, cc = currentCol + c;
+                    if (rr >= 0 && rr < ROWS && cc >= 0 && cc < COLS)
+                        cells[rr*COLS + cc].classList.add('filled');
+                }
+    }
+    function valid(pos, shape) {
+        for (let r = 0; r < shape.length; r++)
+            for (let c = 0; c < shape[0].length; c++)
+                if (shape[r][c]) {
+                    let rr = pos.row + r, cc = pos.col + c;
+                    if (rr < 0 || rr >= ROWS || cc < 0 || cc >= COLS) return false;
+                    if (board[rr][cc]) return false;
+                }
+        return true;
+    }
+    function merge() {
+        for (let r = 0; r < current.length; r++)
+            for (let c = 0; c < current[0].length; c++)
+                if (current[r][c]) board[currentRow + r][currentCol + c] = 1;
+    }
+    function clearLines() {
+        let lines = 0;
+        for (let r = ROWS-1; r >= 0; r--) {
+            if (board[r].every(cell => cell)) {
+                board.splice(r, 1); board.unshift(Array(COLS).fill(0));
+                lines++; r++;
+            }
+        }
+        if (lines > 0) {
+            score += lines * 10;
+            document.getElementById('score').textContent = '得分：' + score;
+        }
+    }
+    function rotate(shape) {
+        const rows = shape.length, cols = shape[0].length;
+        let res = Array.from({length: cols}, () => Array(rows).fill(0));
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++)
+            res[c][rows-1-r] = shape[r][c];
+        return res;
+    }
+    function spawn() {
+        current = randomShape();
+        currentRow = 0;
+        currentCol = Math.floor((COLS - current[0].length)/2);
+        if (!valid({row: currentRow, col: currentCol}, current)) endGame();
+    }
+    function down() {
+        if (valid({row: currentRow+1, col: currentCol}, current)) currentRow++;
+        else { merge(); clearLines(); spawn(); }
+        draw();
+    }
+    function drop() {
+        while (valid({row: currentRow+1, col: currentCol}, current)) currentRow++;
+        merge(); clearLines(); spawn(); draw();
+    }
+    function left() {
+        if (valid({row: currentRow, col: currentCol-1}, current)) { currentCol--; draw(); }
+    }
+    function right() {
+        if (valid({row: currentRow, col: currentCol+1}, current)) { currentCol++; draw(); }
+    }
+    function rotateCurrent() {
+        let rotated = rotate(current);
+        if (valid({row: currentRow, col: currentCol}, rotated)) { current = rotated; draw(); }
+    }
+    function endGame() {
+        clearInterval(timer);
+        gameOver = true;
+        document.getElementById('info').textContent = "游戏结束！得分：" + score;
+        document.getElementById('restart').style.display = 'block';
+    }
+    function setGameSpeed(newInterval) {
+        if (interval === newInterval) return;
+        clearInterval(timer);
+        interval = newInterval;
+        if (!gameOver && !paused) timer = setInterval(gameLoop, interval);
+    }
+    function gameLoop() { if(!paused) down(); }
+    function startGame() {
+        score = 0; resetBoard(); spawn(); draw();
+        document.getElementById('score').textContent = '得分：' + score;
+        document.getElementById('info').innerHTML =
+            '<b>手势：</b>左右移动=横向挥动，旋转=手举高，快下落=手往下<br>' +
+            '<span style="color:#1de9b6">请允许摄像头和麦克风访问</span>';
+        document.getElementById('restart').style.display = 'none';
+        gameOver = false; keyDownStates = {down: false, up: false}; interval = NORMAL_INTERVAL; paused = false;
+        clearInterval(timer); timer = setInterval(gameLoop, interval);
+    }
+    document.getElementById('restart').onclick = startGame;
+    startGame();
+
+    // ========== 手势识别 ==========
+    const gestureStatus = document.getElementById('gesture-status');
+    const video = document.getElementById('video');
+    let model, lastGesture = '', lastActionTime = 0;
+
+    // 记录最近几帧手掌中心的x/y位置，用于检测横向移动（带镜像修正）
+    const historyLen = 7;
+    let handHistory = [];
+    async function setupCamera() {
+        video.width = 320; video.height = 240;
+        const stream = await navigator.mediaDevices.getUserMedia({video: {width:320, height:240}});
+        video.srcObject = stream;
+        return new Promise(resolve => { video.onloadedmetadata = () => { resolve(video); }; });
+    }
+
+    function getGesture(landmarks) {
+        // 镜像修正：x = 1 - x
+        let center = landmarks[9] || landmarks[0];
+        if (!center) return { gesture: 'none' };
+        let mirroredX = 1 - center.x; // 镜像
+        let x = mirroredX * video.width;
+        let y = center.y * video.height;
+
+        // 记录历史，计算横向速度
+        handHistory.push({x, y, t: Date.now()});
+        if (handHistory.length > historyLen) handHistory.shift();
+
+        // 横向移动检测（每次挥动仅移动一格）
+        if (handHistory.length >= historyLen) {
+            let dx = handHistory[historyLen-1].x - handHistory[0].x;
+            let dt = handHistory[historyLen-1].t - handHistory[0].t + 1;
+            let vx = dx / (dt/1000); // px/s
+
+            // 只在速度阈值超出时响应一次
+            if (vx > 180) return {gesture:'right', info: `检测到右挥 (vx=${vx.toFixed(0)}px/s)`};
+            if (vx < -180) return {gesture:'left', info: `检测到左挥 (vx=${vx.toFixed(0)}px/s)`};
+        }
+        // 上/下动作判定
+        if (y < 60) return {gesture:'rotate', info: "检测到上移（旋转）"};
+        if (y > 200) return {gesture:'down', info: "检测到下移（加速）"};
+
+        return {gesture:'none'};
+    }
+
+    // 防抖：同一手势300ms之内只响应一次
+    function handleGesture(gestureObj) {
+        const {gesture, info} = gestureObj;
+        const now = Date.now();
+        if (gesture !== 'none' && (gesture !== lastGesture || now - lastActionTime > 300)) {
+            lastGesture = gesture; lastActionTime = now;
+            switch(gesture) {
+                case 'left': left(); gestureStatus.textContent = info || "手势：左移"; break;
+                case 'right': right(); gestureStatus.textContent = info || "手势：右移"; break;
+                case 'down': setGameSpeed(FAST_INTERVAL); setTimeout(()=>setGameSpeed(NORMAL_INTERVAL),200); gestureStatus.textContent = info || "手势：加速下落"; break;
+                case 'rotate': rotateCurrent(); gestureStatus.textContent = info || "手势：旋转"; break;
+                default: gestureStatus.textContent = "手势：未检测到动作";
+            }
+        }
+        if (gesture === 'none') {
+            gestureStatus.textContent = "手势：未检测到动作";
+        }
+    }
+
+    async function runHandGesture() {
+        await setupCamera();
+        gestureStatus.textContent = "正在加载手势模型...";
+        model = await handPoseDetection.createDetector(handPoseDetection.SupportedModels.MediaPipeHands, {
+            runtime: 'mediapipe',
+            modelType: 'lite',
+            maxHands: 1,
+            solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands'
+        });
+        gestureStatus.textContent = "请将手放入摄像头画面";
+        async function detectHands() {
+            const hands = await model.estimateHands(video);
+            if (hands.length > 0 && hands[0].keypoints) {
+                handleGesture(getGesture(hands[0].keypoints));
+            } else {
+                gestureStatus.textContent = "手势状态：未检测到手";
+                lastGesture = '';
+                handHistory = [];
+            }
+            requestAnimationFrame(detectHands);
+        }
+        detectHands();
+    }
+    runHandGesture();
+
+    // ========= 实时语音控制 =========
+    const voiceCmdBtn = document.getElementById('voice-cmd-btn');
+    const voiceStatus = document.getElementById('voice-status');
+    const cmdPreview = document.getElementById('cmd-preview');
+    const confidenceDiv = document.getElementById('confidence');
+    let recog, recogRunning = false, recogOn = false, lastVoiceCmd = '', lastVoiceCmdTime = 0;
+
+    voiceCmdBtn.onclick = function() {
+        if (recogOn) stopVoiceCommand();
+        else startVoiceCommand();
+    };
+
+    function voiceDoCommand(cmd, confidence) {
+        const now = Date.now();
+        // 防止语音连续触发同一命令
+        if (cmd === lastVoiceCmd && now - lastVoiceCmdTime < 350) return;
+        lastVoiceCmd = cmd;
+        lastVoiceCmdTime = now;
+        switch(cmd) {
+            case '左': left(); break;
+            case '右': right(); break;
+            case '变': rotateCurrent(); break;
+            case '落': drop(); break;
+            case '停': togglePause(); break;
+            case '下':
+                keyDownStates.down = true; setGameSpeed(FAST_INTERVAL);
+                setTimeout(() => { keyDownStates.down = false; setGameSpeed(NORMAL_INTERVAL); }, 450);
+                break;
+            case '上':
+                keyDownStates.up = true; setGameSpeed(SLOW_INTERVAL);
+                setTimeout(() => { keyDownStates.up = false; setGameSpeed(NORMAL_INTERVAL); }, 450);
+                break;
+        }
+    }
+
+    function extractCmd(txt) {
+        if (txt.includes('左')) return '左';
+        if (txt.includes('右')) return '右';
+        if (txt.includes('变')) return '变';
+        if (txt.includes('落')) return '落';
+        if (txt.includes('停')) return '停';
+        if (txt.includes('下')) return '下';
+        if (txt.includes('上')) return '上';
+        return '';
+    }
+
+    async function startVoiceCommand() {
+        if (recogRunning) return;
+        if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+            voiceStatus.textContent = '语音命令：不支持（请用Chrome）';
+            return;
+        }
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recog = new SpeechRecognition();
+        recog.lang = 'zh-CN';
+        recog.continuous = true;
+        recog.interimResults = true;
+        recogRunning = true;
+        recogOn = true;
+        voiceCmdBtn.disabled = true;
+        voiceStatus.textContent = '语音命令：已启动，说“上下左右停落变”实时控制方块';
+
+        recog.onresult = function(e) {
+            if (gameOver) return;
+            let result = e.results[e.results.length-1];
+            let last = result[0];
+            let txt = last.transcript.replace(/\s/g, '');
+            let confidence = last.confidence || 0;
+            cmdPreview.textContent = '命令预览：' + txt;
+            confidenceDiv.textContent = '置信度：' + (confidence * 100).toFixed(2) + '%';
+
+            // 实时响应命令——每个interimResult都判一次
+            if (paused && txt.includes('停')) { togglePause(); return; }
+            if (paused) return;
+            let cmd = extractCmd(txt);
+            if (cmd) voiceDoCommand(cmd, confidence);
+        };
+        recog.onend = function() {
+            recogRunning = false;
+            recogOn = false;
+            voiceCmdBtn.disabled = false;
+            voiceStatus.textContent = '语音命令：已停止，可再次开启';
+        };
+        recog.onerror = function(e) {
+            recogRunning = false;
+            recogOn = false;
+            voiceCmdBtn.disabled = false;
+            voiceStatus.textContent = '语音命令出错：' + (e.error || '未知错误');
+        };
+        recog.start();
+    }
+    function stopVoiceCommand() {
+        if (recog && recogRunning) recog.stop();
+        recogRunning = false;
+        recogOn = false;
+        voiceCmdBtn.disabled = false;
+        voiceStatus.textContent = '语音命令：已停止';
+    }
     </script>
 </body>
 </html>
